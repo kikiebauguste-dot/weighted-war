@@ -117,6 +117,8 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
   <script>
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
+  import { getDatabase, ref, child, get, set, update, onValue, runTransaction } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
     // 1) Paste your Firebase config here
     // For Firebase JS SDK v7.20.0 and later, measurementId is optional
     const firebaseConfig = {
@@ -129,8 +131,8 @@
       appId: "1:575150999392:web:6cdea188b68fbec7d10005",
       measurementId: "G-RGTQRM0ND3"
     };
- const app = initializeApp(firebaseConfig);
-  const db = getDatabase(app);
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
 
   // --- Globals ---
   let gameId = null;
