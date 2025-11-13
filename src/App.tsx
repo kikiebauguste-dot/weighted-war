@@ -149,6 +149,7 @@ useEffect(() => {
       setPlayerId(user.uid); // unique per browser session
     }
   });
+  return () => unsub();
 }, []);
 
   const [name, setName] = useState<string>(() => localStorage.getItem("name") || "");
