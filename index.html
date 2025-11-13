@@ -429,44 +429,34 @@
       log(`${winner.toUpperCase()} wins ${wonCards.join(', ')}.`);
     }
 
-    // Next turn with guard
-    async function nextTurn() {
-      if (!state) {
-        alert("Game state not loaded yet.");
-        return;
-      }
-      if (state.phase !== 'resolution') return;
+   async function nextTurn() {
+  if (!state) {
+    alert("Game state not loaded yet.");
+    return;
+  }
+  if (!state.phase) {
+    alert("Game phase not set yet.");
+    return;
+  }
+  if (state.phase !== 'resolution') {
+    log("Next turn not available. Current phase: " + state.phase);
+    return;
+  }
 
-      const updates = {
-        currentTableCard: null,
-        p1: { ...state.p1, bid: null },
-        p2: { ...state.p2, bid: null },
-        phase: 'await-flip'
-      };
-      await stateRef().update(updates);
+  const updates = {
+    currentTableCard: null,
+    p1: { ...state.p1, bid: null },
+    p2: { ...state.p2, bid: null },
+    phase: 'await-flip'
+  };
+  await stateRef().update(updates);
 
-      // Auto-flip if cards remain
-      await flipTableCard();
-      selectedBid = null;
-      render();
-    }
+  // Auto-flip if cards remain
+  await flipTableCard();
+  selectedBid = null;
+  render();
+}
 
-
-    async function nextTurn() {
-      if (state.phase !== 'resolution') return;
-      // Clear bids, clear current card, move to next flip or finish
-      const updates = {
-        currentTableCard: null,
-        p1: { ...state.p1, bid: null },
-        p2: { ...state.p2, bid: null },
-        phase: 'await-flip'
-      };
-      await stateRef().update(updates);
-      // Auto-flip if cards remain
-      await flipTableCard();
-      selectedBid = null;
-      render();
-    }
 
     async function finishGame() {
       // No more table cards, sum scores
