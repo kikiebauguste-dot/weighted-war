@@ -193,51 +193,76 @@
     }
 
     // 7) Rendering
-    function render() {
-      if (!state) return;
-      $('statusText').textContent = `Phase: ${state.phase}`;
-      $('youPill').textContent = `You: ${youName || '—'}`;
-      $('oppPill').textContent = `Opponent: ${state[role==='p1'?'p2':'p1'].name || '—'}`;
+   function render() {
+  if (!state) return;
 
-      $('tableCard').textContent = state.currentTableCard ?? '—';
+  // --- Status message ---
+  let statusMsg = '';
+  if (!state.p2.name) {
+    statusMsg = 'Game created. Waiting for opponent to join.';
+  } else if (state.phase === 'await-bids') {
+    statusMsg = selectedBid ? `You selected card ${selectedBid}. Commit your bid!`
+                            : 'Place your bid!';
+  } else if (state.phase === 'await-reveal') {
+    statusMsg = 'Both bids are in. Reveal!';
+  } else if (state.phase === 'resolution') {
+    statusMsg = 'Round resolved. Click Next Turn.';
+  } else if (state.phase === 'await-flip') {
+    statusMsg = 'Flip the next table card.';
+  } else {
+    statusMsg = `Phase: ${state.phase}`;
+  }
+  $('statusText').textContent = statusMsg;
 
-      const your = state[role];
-      const opp  = state[role==='p1'?'p2':'p1'];
-      $('yourScore').textContent = (your.scoreCards || []).reduce((a,b)=>a+b,0);
-      $('oppScore').textContent  = (opp.scoreCards || []).reduce((a,b)=>a+b,0);
+  // --- Player labels ---
+  $('youPill').textContent = `You: ${youName || '—'}`;
+  $('oppPill').textContent = `Opponent: ${state[role==='p1'?'p2':'p1'].name || '—'}`;
 
-      $('warNote').textContent = state.warPile.length ? `War in progress: ${state.warPile.length} card(s)` : 'No war in progress.';
+  // --- Table card ---
+  $('tableCard').textContent = state.currentTableCard ?? '—';
 
-      // Hand grid
-      const hg = $('handGrid');
-      hg.innerHTML = '';
-      (your.hand || []).forEach(v => {
-        const btn = document.createElement('div');
-        btn.className = 'bid' + (selectedBid===v ? ' selected' : '');
-        btn.textContent = v;
-        btn.onclick = () => {
-          if (state.phase !== 'await-bids') return;
-          selectedBid = v;
-          render(); // refresh selection highlight
-        };
-        hg.appendChild(btn);
-      });
+  // --- Scores ---
+  const your = state[role];
+  const opp  = state[role==='p1'?'p2':'p1'];
+  $('yourScore').textContent = (your.scoreCards || []).reduce((a,b)=>a+b,0);
+  $('oppScore').textContent  = (opp.scoreCards || []).reduce((a,b)=>a+b,0);
 
-      // War stack
-      const ws = $('warStack');
-      ws.innerHTML = '';
-      state.warPile.forEach(v => {
-        const c = document.createElement('div');
-        c.className = 'cardface';
-        c.textContent = v;
-        ws.appendChild(c);
-      });
+  // --- War note ---
+  $('warNote').textContent = state.warPile.length
+    ? `War in progress: ${state.warPile.length} card(s)`
+    : 'No war in progress.';
 
-      // Buttons visibility/enabled
-      $('commitBidBtn').disabled = !(state.phase === 'await-bids' && selectedBid !== null);
-      $('revealBtn').disabled    = !(state.phase === 'await-reveal');
-      $('nextTurnBtn').disabled  = !(state.phase === 'resolution');
-    }
+  // --- Hand grid ---
+  const hg = $('handGrid');
+  hg.innerHTML = '';
+  (your.hand || []).forEach(v => {
+    const btn = document.createElement('div');
+    btn.className = 'bid' + (selectedBid===v ? ' selected' : '');
+    btn.textContent = v;
+    btn.onclick = () => {
+      if (state.phase !== 'await-bids') return;
+      selectedBid = v;
+      render(); // refresh selection highlight
+    };
+    hg.appendChild(btn);
+  });
+
+  // --- War stack ---
+  const ws = $('warStack');
+  ws.innerHTML = '';
+  state.warPile.forEach(v => {
+    const c = document.createElement('div');
+    c.className = 'cardface';
+    c.textContent = v;
+    ws.appendChild(c);
+  });
+
+  // --- Buttons ---
+  $('commitBidBtn').disabled = !(state.phase === 'await-bids' && selectedBid !== null);
+  $('revealBtn').disabled    = !(state.phase === 'await-reveal');
+  $('nextTurnBtn').disabled  = !(state.phase === 'resolution');
+}
+
 
     // 8) Sync listener
     stateRef().on('value', (snap) => {
