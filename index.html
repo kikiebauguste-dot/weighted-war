@@ -255,7 +255,7 @@
     });
 
     // 9) Phases and actions
-    async function createGame(id, yourNameInput) {
+   async function createGame(id, yourNameInput) {
   gameId = id;
   youId = 'u_' + Math.random().toString(36).slice(2);
   role = 'p1';
@@ -281,7 +281,7 @@
     await stateRef().update({
       currentTableCard: firstCard,
       tableIndex: 1,
-      phase: 'await-bids'
+      phase: 'await-bids'   // advance to bidding
     });
     log(`Game created. First table card is ${firstCard}. Place your bid!`);
   }
@@ -331,22 +331,25 @@
 }
 
 
-    async function flipTableCard() {
-      if (state.phase !== 'await-flip') return;
-      if (state.tableIndex >= state.tableDeck.length) {
-        // no more table cards -> finish
-        await finishGame();
-        return;
-      }
-      const next = state.tableDeck[state.tableIndex];
-      const updates = {
-        currentTableCard: next,
-        tableIndex: state.tableIndex + 1,
-        phase: 'await-bids'
-      };
-      await stateRef().update(updates);
-      log(`Table shows ${next}. Place your bid.`);
-    }
+   async function flipTableCard() {
+  if (!state) return;
+  if (state.phase !== 'await-flip') return;
+
+  if (state.tableIndex >= state.tableDeck.length) {
+    await finishGame();
+    return;
+  }
+
+  const next = state.tableDeck[state.tableIndex];
+  await stateRef().update({
+    currentTableCard: next,
+    tableIndex: state.tableIndex + 1,
+    phase: 'await-bids'   // ✅ always advance to bidding
+  });
+
+  log(`Table shows ${next}. Place your bid.`);
+}
+
 
     // Commit bid with guard
     async function commitBid() {
