@@ -129,406 +129,216 @@
       appId: "1:575150999392:web:6cdea188b68fbec7d10005",
       measurementId: "G-RGTQRM0ND3"
     };
-    firebase.initializeApp(firebaseConfig);
-    const db = firebase.database();
+ const app = initializeApp(firebaseConfig);
+  const db = getDatabase(app);
 
-    // 2) Utility helpers
-    const $ = (id) => document.getElementById(id);
-    const setHidden = (el, hidden) => el.classList.toggle('hidden', hidden);
-    const log = (msg) => { const d = document.createElement('div'); d.textContent = msg; $('log').prepend(d); };
+  // --- Globals ---
+  let gameId = null;
+  let youId = null;
+  let role = null;
+  let youName = null;
+  let state = null;
+  let selectedBid = null;
 
-    // 3) Game state (client-side mirrors server)
-    let gameId = '';
-    let youId = '';
-    let youName = '';
-    let oppId = '';
-    let role = ''; // 'p1' or 'p2'
-    let state = null; // latest synced state
-    let selectedBid = null;
+  // --- Helpers ---
+  const gameRef = () => ref(db, 'weighted-war/' + gameId);
+  const stateRef = () => child(gameRef(), 'state');
+  const range11 = () => Array.from({length: 11}, (_, i) => i+1);
+  const log = (msg) => { const el = document.getElementById('log'); el.textContent += msg + "\\n"; };
 
-    // 4) Derived paths
-    const gameRef = () => db.ref('weighted-war/' + gameId);
-    const stateRef = () => db.ref('weighted-war/' + gameId + '/state');
-
-    // 5) Deck helpers for 1..11
-    const range11 = () => Array.from({length:11}, (_,i)=>i+1);
-    const shuffle = (arr) => {
-      const a = arr.slice();
-      for (let i = a.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [a[i], a[j]] = [a[j], a[i]];
-      }
-      return a;
+  // --- Initial state ---
+  function initialState() {
+    const removed = Math.floor(Math.random() * 11) + 1;
+    const tableDeck = range11().filter(v => v !== removed).sort(() => Math.random() - 0.5);
+    return {
+      createdAt: Date.now(),
+      removedCard: removed,
+      tableDeck,
+      tableIndex: 0,
+      currentTableCard: null,
+      warPile: [],
+      p1: { hand: range11(), bid: null, scoreCards: [], name: '' },
+      p2: { hand: range11(), bid: null, scoreCards: [], name: '' },
+      phase: 'await-flip',
+      winner: null
     };
+  }
 
-    // 6) Initial state generator
-    function initialState() {
-      const tableDeck = shuffle(range11());
-      // remove one random card from table deck at start
-      const removed = tableDeck.pop(); // since shuffled, popping is effectively random
-      const p1Hand = range11();
-      const p2Hand = range11();
-      return {
-        createdAt: Date.now(),
-        removedCard: removed,
-        tableDeck,
-        tableIndex: 0,              // position for next flip
-        currentTableCard: null,     // shown card this turn
-        warPile: [],                // accumulated table cards during ties
-        p1: {
-          hand: p1Hand,
-          bid: null,
-          scoreCards: [],
-          name: ''
-        },
-        p2: {
-          hand: p2Hand,
-          bid: null,
-          scoreCards: [],
-          name: ''
-        },
-        phase: 'await-flip',        // 'await-flip' | 'await-bids' | 'await-reveal' | 'resolution' | 'finished'
-        winner: null,               // 'p1' | 'p2' | 'tie' at end
-      };
+  // --- Create game ---
+  async function createGame(id, yourNameInput) {
+    gameId = id;
+    youId = 'u_' + Math.random().toString(36).slice(2);
+    role = 'p1';
+    youName = yourNameInput || 'Player 1';
+
+    const refObj = gameRef();
+    const exists = (await get(refObj)).val();
+    if (exists) { alert('Game ID already exists.'); return; }
+
+    const init = initialState();
+    init.p1.name = youName;
+    await set(refObj, { state: init, players: { p1: youId } });
+
+    // Flip first card immediately
+    if (init.tableDeck.length > 0) {
+      const firstCard = init.tableDeck[0];
+      await update(stateRef(), {
+        currentTableCard: firstCard,
+        tableIndex: 1,
+        phase: 'await-bids'
+      });
+      log(`Game created. First table card is ${firstCard}. Place your bid!`);
     }
 
-    // 7) Rendering
-    function render() {
-      if (!state) return;
-      $('statusText').textContent = `Phase: ${state.phase}`;
-      $('youPill').textContent = `You: ${youName || '—'}`;
-      $('oppPill').textContent = `Opponent: ${state[role==='p1'?'p2':'p1'].name || '—'}`;
+    render();
+  }
 
-      $('tableCard').textContent = state.currentTableCard ?? '—';
+  // --- Join game ---
+  async function joinGame(id, yourNameInput) {
+    gameId = id;
+    youId = 'u_' + Math.random().toString(36).slice(2);
+    role = 'p2';
+    youName = yourNameInput || 'Player 2';
 
-      const your = state[role];
-      const opp  = state[role==='p1'?'p2':'p1'];
-      $('yourScore').textContent = (your.scoreCards || []).reduce((a,b)=>a+b,0);
-      $('oppScore').textContent  = (opp.scoreCards || []).reduce((a,b)=>a+b,0);
+    const refObj = gameRef();
+    const current = (await get(refObj)).val();
+    if (!current) { alert('Game not found.'); return; }
 
-      $('warNote').textContent = state.warPile.length ? `War in progress: ${state.warPile.length} card(s)` : 'No war in progress.';
+    await runTransaction(child(refObj, 'players/p2'), val => val || youId);
 
-      // Hand grid
-      const hg = $('handGrid');
-      hg.innerHTML = '';
-      (your.hand || []).forEach(v => {
-        const btn = document.createElement('div');
-        btn.className = 'bid' + (selectedBid===v ? ' selected' : '');
-        btn.textContent = v;
-        btn.onclick = () => {
-          if (state.phase !== 'await-bids') return;
-          selectedBid = v;
-          render(); // refresh selection highlight
-        };
-        hg.appendChild(btn);
-      });
+    const p2Update = {
+      name: youName,
+      hand: current.state?.p2?.hand || range11(),
+      bid: null,
+      scoreCards: current.state?.p2?.scoreCards || []
+    };
+    await set(child(stateRef(), 'p2'), p2Update);
 
-      // War stack
-      const ws = $('warStack');
-      ws.innerHTML = '';
-      state.warPile.forEach(v => {
-        const c = document.createElement('div');
-        c.className = 'cardface';
-        c.textContent = v;
-        ws.appendChild(c);
-      });
+    render();
+  }
 
-      // Buttons visibility/enabled
-      $('commitBidBtn').disabled = !(state.phase === 'await-bids' && selectedBid !== null);
-      $('revealBtn').disabled    = !(state.phase === 'await-reveal');
-      $('nextTurnBtn').disabled  = !(state.phase === 'resolution');
+  // --- Flip table card ---
+  async function flipTableCard() {
+    if (!state) return;
+    if (state.phase !== 'await-flip') return;
+
+    if (state.tableIndex >= state.tableDeck.length) {
+      log("Game finished.");
+      return;
     }
 
-    // 8) Sync listener
-    stateRef().on('value', (snap) => {
-      state = snap.val();
-      if (!state) return;
-      setHidden($('gameCard'), false);
-      render();
-      // if game finished, show summary
-      if (state.phase === 'finished') {
-        const youScore = state[role].scoreCards.reduce((a,b)=>a+b,0);
-        const oppScore = state[role==='p1'?'p2':'p1'].scoreCards.reduce((a,b)=>a+b,0);
-        const outcome = youScore===oppScore ? 'Tie game.' : (youScore>oppScore ? 'You win!' : 'You lose.');
-        log(`Game finished. ${outcome} (You ${youScore} – Opp ${oppScore})`);
-      }
+    const next = state.tableDeck[state.tableIndex];
+    await update(stateRef(), {
+      currentTableCard: next,
+      tableIndex: state.tableIndex + 1,
+      phase: 'await-bids'
     });
-
-    // 9) Phases and actions
-   async function createGame(id, yourNameInput) {
-  gameId = id;
-  youId = 'u_' + Math.random().toString(36).slice(2);
-  role = 'p1';
-  youName = yourNameInput || 'Player 1';
-
-  const ref = gameRef();
-  const exists = (await ref.get()).val();
-  if (exists) {
-    alert('Game ID already exists. Choose another.');
-    return;
+    log(`Table shows ${next}. Place your bid.`);
   }
 
-  // Build initial state
-  const init = initialState();
-  init.p1.name = youName;
+  // --- Commit bid ---
+  async function commitBid() {
+    if (!state) { alert("Game state not loaded yet."); return; }
+    if (state.phase !== 'await-bids') return;
+    if (selectedBid === null) return;
 
-  // Write initial state to Firebase
-  await ref.set({ state: init, players: { p1: youId } });
+    const hand = state[role].hand.slice();
+    const idx = hand.indexOf(selectedBid);
+    if (idx === -1) { alert('That card is no longer in your hand.'); return; }
 
-  // ✅ Flip the first table card immediately so game starts
-  if (init.tableDeck.length > 0) {
-    const firstCard = init.tableDeck[0];
-    await stateRef().update({
-      currentTableCard: firstCard,
-      tableIndex: 1,
-      phase: 'await-bids'   // advance to bidding
+    const updates = {};
+    updates[role + '/bid'] = selectedBid;
+    hand.splice(idx, 1);
+    updates[role + '/hand'] = hand;
+    await update(stateRef(), updates);
+
+    const fresh = (await get(stateRef())).val();
+    if (fresh && fresh.p1.bid !== null && fresh.p2.bid !== null && fresh.phase === 'await-bids') {
+      await update(stateRef(), { phase: 'await-reveal' });
+    }
+
+    render();
+  }
+
+  // --- Reveal bids ---
+  async function revealBidsAndResolve() {
+    if (!state) { alert("Game state not loaded yet."); return; }
+    if (state.phase !== 'await-reveal') return;
+
+    const p1b = state.p1.bid, p2b = state.p2.bid;
+    const tableCard = state.currentTableCard;
+    log(`Reveal: P1 bid ${p1b}, P2 bid ${p2b}, table ${tableCard}`);
+
+    if (p1b === p2b) {
+      const newWar = state.warPile.slice();
+      newWar.push(tableCard);
+      await update(stateRef(), {
+        warPile: newWar,
+        currentTableCard: null,
+        p1: { ...state.p1, bid: null },
+        p2: { ...state.p2, bid: null },
+        phase: 'await-flip'
+      });
+      log(`War continues. Pile size: ${newWar.length}`);
+      return;
+    }
+
+    const winner = (p1b > p2b) ? 'p1' : 'p2';
+    const wonCards = [tableCard, ...state.warPile];
+    const winnerCards = state[winner].scoreCards.slice();
+    wonCards.forEach(c => winnerCards.push(c));
+
+    await update(stateRef(), {
+      [winner]: { ...state[winner], scoreCards: winnerCards },
+      warPile: [],
+      phase: 'resolution'
     });
-    log(`Game created. First table card is ${firstCard}. Place your bid!`);
+    log(`${winner.toUpperCase()} wins ${wonCards.join(', ')}.`);
   }
 
-  // Show UI
-  setHidden($('connectCard'), true);
-  setHidden($('linkCard'), false);
-  $('shareLink').value = `${location.origin}${location.pathname}?game=${encodeURIComponent(gameId)}`;
-  $('statusText').textContent = 'Game created. Waiting for opponent to join.';
-  setHidden($('statusCard'), false);
-  setHidden($('gameCard'), false);
-  render();
-}
+  // --- Next turn ---
+  async function nextTurn() {
+    if (!state) { alert("Game state not loaded yet."); return; }
+    if (!state.phase) { alert("Game phase not set yet."); return; }
+    if (state.phase !== 'resolution') {
+      log("Next turn not available. Current phase: " + state.phase);
+      return;
+    }
 
+    const updates = {
+      currentTableCard: null,
+      p1: { ...state.p1, bid: null },
+      p2: { ...state.p2, bid: null },
+      phase: 'await-flip'
+    };
+    await update(stateRef(), updates);
 
-    async function joinGame(id, yourNameInput) {
-  gameId = id;
-  youId = 'u_' + Math.random().toString(36).slice(2);
-  role = 'p2';
-  youName = yourNameInput || 'Player 2';
-
-  const ref = gameRef();
-  const current = (await ref.get()).val();
-  if (!current) {
-    alert('Game not found. Ask your friend to create it first.');
-    return;
+    await flipTableCard();
+    selectedBid = null;
+    render();
   }
 
-  // Lock in p2 if slot free
-  await ref.child('players/p2').transaction(val => val || youId);
-
-  // ✅ Use youName here
-  const p2Update = {
-    name: youName,
-    hand: current.state?.p2?.hand || range11(),
-    bid: null,
-    scoreCards: current.state?.p2?.scoreCards || []
-  };
-  await stateRef().child('p2').set(p2Update);
-
-  setHidden($('connectCard'), true);
-  setHidden($('linkCard'), true);
-  setHidden($('statusCard'), false);
-  setHidden($('gameCard'), false);
-  $('statusText').textContent = 'Joined game.';
-  render();
-}
-
-
-   async function flipTableCard() {
-  if (!state) return;
-  if (state.phase !== 'await-flip') return;
-
-  if (state.tableIndex >= state.tableDeck.length) {
-    await finishGame();
-    return;
-  }
-
-  const next = state.tableDeck[state.tableIndex];
-  await stateRef().update({
-    currentTableCard: next,
-    tableIndex: state.tableIndex + 1,
-    phase: 'await-bids'   // ✅ always advance to bidding
+  // --- Listener ---
+  onValue(stateRef(), (snap) => {
+    state = snap.val();
+    render();
   });
 
-  log(`Table shows ${next}. Place your bid.`);
-}
-
-
-    // Commit bid with guard
-    async function commitBid() {
-      if (!state) {
-        alert("Game state not loaded yet. Please wait until the game is ready.");
-        return;
-      }
-
-      if (state.phase !== 'await-bids') return;
-      if (selectedBid === null) return;
-
-      const hand = state[role].hand.slice();
-      const idx = hand.indexOf(selectedBid);
-      if (idx === -1) {
-        alert('That card is no longer in your hand.');
-        return;
-      }
-
-      // Write bid and remove from hand
-      const updates = {};
-      updates[role + '/bid'] = selectedBid;
-      hand.splice(idx, 1);
-      updates[role + '/hand'] = hand;
-
-      await stateRef().update(updates);
-
-      // If both bids present, move to await-reveal
-      const fresh = (await stateRef().get()).val();
-      if (fresh && fresh.p1.bid !== null && fresh.p2.bid !== null && fresh.phase === 'await-bids') {
-        await stateRef().update({ phase: 'await-reveal' });
-      }
-
-      render();
-    }
-
-    // Reveal bids with guard
-    async function revealBidsAndResolve() {
-      if (!state) {
-        alert("Game state not loaded yet.");
-        return;
-      }
-      if (state.phase !== 'await-reveal') return;
-
-      const p1b = state.p1.bid, p2b = state.p2.bid;
-      const tableCard = state.currentTableCard;
-
-      log(`Reveal: P1 bid ${p1b}, P2 bid ${p2b}, table ${tableCard}`);
-
-      if (p1b === p2b) {
-        // War: add current table card to war pile, clear bids, next flip
-        const newWar = state.warPile.slice();
-        newWar.push(tableCard);
-
-        await stateRef().update({
-          warPile: newWar,
-          currentTableCard: null,
-          p1: { ...state.p1, bid: null },
-          p2: { ...state.p2, bid: null },
-          phase: 'await-flip'
-        });
-        log(`War continues. Pile size: ${newWar.length}`);
-        return;
-      }
-
-      // Winner takes current table + war pile
-      const winner = (p1b > p2b) ? 'p1' : 'p2';
-      const wonCards = [tableCard, ...state.warPile];
-      const winnerCards = state[winner].scoreCards.slice();
-      wonCards.forEach(c => winnerCards.push(c));
-
-      await stateRef().update({
-        [winner]: { ...state[winner], scoreCards: winnerCards },
-        warPile: [],
-        phase: 'resolution'
-      });
-
-      log(`${winner.toUpperCase()} wins ${wonCards.join(', ')}.`);
-    }
-
-   async function nextTurn() {
-  if (!state) {
-    alert("Game state not loaded yet.");
-    return;
-  }
-  if (!state.phase) {
-    alert("Game phase not set yet.");
-    return;
-  }
-  if (state.phase !== 'resolution') {
-    log("Next turn not available. Current phase: " + state.phase);
-    return;
+  // --- Render ---
+  function render() {
+    if (!state) return;
+    document.getElementById('youPill').textContent = `You: ${state[role].name || '—'}`;
+    document.getElementById('oppPill').textContent = `Opponent: ${state[role==='p1'?'p2':'p1'].name || '—'}`;
+    document.getElementById('tableCard').textContent = `Table card ${state.currentTableCard || '—'}`;
+    document.getElementById('commitBidBtn').disabled = !state || state.phase !== 'await-bids' || selectedBid === null;
+    document.getElementById('revealBtn').disabled = !state || state.phase !== 'await-reveal';
+    document.getElementById('nextTurnBtn').disabled = !state || state.phase !== 'resolution';
   }
 
-  const updates = {
-    currentTableCard: null,
-    p1: { ...state.p1, bid: null },
-    p2: { ...state.p2, bid: null },
-    phase: 'await-flip'
-  };
-  await stateRef().update(updates);
-
-  // Auto-flip if cards remain
-  await flipTableCard();
-  selectedBid = null;
-  render();
-}
-
-
-    async function finishGame() {
-      // No more table cards, sum scores
-      const p1Score = state.p1.scoreCards.reduce((a,b)=>a+b,0);
-      const p2Score = state.p2.scoreCards.reduce((a,b)=>a+b,0);
-      const winner = (p1Score === p2Score) ? 'tie' : (p1Score > p2Score ? 'p1' : 'p2');
-      await stateRef().update({ phase: 'finished', winner });
-      log(`Final: P1 ${p1Score}, P2 ${p2Score}. Winner: ${winner.toUpperCase()}`);
-    }
-
-    async function resetGame() {
-      // Only allow reset by P1 for simplicity
-      if (role !== 'p1') { alert('Only Player 1 can reset the game.'); return; }
-      const init = initialState();
-      init.p1.name = state.p1.name || 'Player 1';
-      init.p2.name = state.p2.name || 'Player 2';
-      await stateRef().set(init);
-      log('Game reset.');
-    }
-
-    // 10) UI wiring
-    $('createBtn').onclick = async () => {
-      const id = ($('gameIdInput').value || '').trim();
-      if (!id) return alert('Enter a game ID.');
-      const yourNameInput = prompt('Enter your name (optional):') || 'Player 1';
-      await createGame(id, yourNameInput);
-      $('shareLink').value = `${location.origin}${location.pathname}?game=${encodeURIComponent(id)}`;
-    };
-
-    $('joinBtn').onclick = async () => {
-      const id = ($('gameIdInput').value || '').trim();
-      if (!id) return alert('Enter a game ID.');
-      const yourNameInput = prompt('Enter your name (optional):') || 'Player 2';
-      await joinGame(id, yourNameInput);
-    };
-
-    $('copyLink').onclick = async () => {
-      await navigator.clipboard.writeText($('shareLink').value);
-      alert('Link copied.');
-    };
-
-    $('commitBidBtn').onclick = commitBid;
-    $('revealBtn').onclick = revealBidsAndResolve;
-    $('nextTurnBtn').onclick = nextTurn;
-    $('resetBtn').onclick = resetGame;
-
-    // 11) Autoload by URL ?game=ID
-    window.addEventListener('load', async () => {
-      const params = new URLSearchParams(location.search);
-      const gid = params.get('game');
-      if (gid) {
-        $('gameIdInput').value = gid;
-        const choice = confirm('Join existing game? OK to join as Player 2, Cancel to create.');
-        const name = prompt('Enter your name (optional):') || (choice ? 'Player 2' : 'Player 1');
-        if (choice) {
-          await joinGame(gid, name);
-        } else {
-          await createGame(gid, name);
-        }
-      }
-      // If creator, auto-flip first card to start
-      stateRef().on('value', async (s) => {
-        const st = s.val();
-        if (!st) return;
-        if (st.phase === 'await-flip' && st.currentTableCard === null) {
-          // Only p1 triggers flips to avoid races
-          if (role === 'p1') {
-            await flipTableCard();
-          }
-        }
-      });
-    });
-  </script>
+  // --- Button bindings ---
+  document.getElementById('commitBidBtn').onclick = commitBid;
+  document.getElementById('revealBtn').onclick = revealBidsAndResolve;
+  document.getElementById('nextTurnBtn').onclick = nextTurn;
+</script>
 </body>
 </html>
