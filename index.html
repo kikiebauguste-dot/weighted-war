@@ -298,26 +298,38 @@
 
 
     async function joinGame(id, yourNameInput) {
-      gameId = id;
-      youId = 'u_' + Math.random().toString(36).slice(2);
-      role = 'p2';
-      youName = yourNameInput || 'Player 2';
+  gameId = id;
+  youId = 'u_' + Math.random().toString(36).slice(2);
+  role = 'p2';
+  youName = yourNameInput || 'Player 2';
 
-      const ref = gameRef();
-      const current = (await ref.get()).val();
-      if (!current) { alert('Game not found. Ask your friend to create it first.'); return; }
+  const ref = gameRef();
+  const current = (await ref.get()).val();
+  if (!current) {
+    alert('Game not found. Ask your friend to create it first.');
+    return;
+  }
 
-      // lock in p2 if slot free
-      await ref.child('players/p2').transaction(val => val || youId);
-      await stateRef().child('p2/name').set(youName);
+  // Lock in p2 if slot free
+  await ref.child('players/p2').transaction(val => val || youId);
 
-      setHidden($('connectCard'), true);
-      setHidden($('linkCard'), true);
-      setHidden($('statusCard'), false);
-      setHidden($('gameCard'), false);
-      $('statusText').textContent = 'Joined game.';
-      render();
-    }
+  // ✅ Update the full p2 object so state is consistent
+  const p2Update = {
+    name: yourName,
+    hand: current.state?.p2?.hand || range11(),
+    bid: null,
+    scoreCards: current.state?.p2?.scoreCards || []
+  };
+  await stateRef().child('p2').set(p2Update);
+
+  setHidden($('connectCard'), true);
+  setHidden($('linkCard'), true);
+  setHidden($('statusCard'), false);
+  setHidden($('gameCard'), false);
+  $('statusText').textContent = 'Joined game.';
+  render();
+}
+
 
     async function flipTableCard() {
       if (state.phase !== 'await-flip') return;
