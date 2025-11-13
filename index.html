@@ -116,23 +116,24 @@
   <!-- Firebase -->
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
   import { getDatabase, ref, child, get, set, update, onValue, runTransaction } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
-    // 1) Paste your Firebase config here
-    // For Firebase JS SDK v7.20.0 and later, measurementId is optional
-    const firebaseConfig = {
-      apiKey: "AIzaSyC8yo4XBJCJ_1FaEVzPKOMlN_Kue0Ff5yQ",
-      authDomain: "weighted-wars.firebaseapp.com",
-      databaseURL: "https://weighted-wars-default-rtdb.firebaseio.com",
-      projectId: "weighted-wars",
-      storageBucket: "weighted-wars.firebasestorage.app",
-      messagingSenderId: "575150999392",
-      appId: "1:575150999392:web:6cdea188b68fbec7d10005",
-      measurementId: "G-RGTQRM0ND3"
-    };
-    firebase.initializeApp(firebaseConfig);
-    const db = firebase.database();
+
+  // --- Firebase config ---
+  const firebaseConfig = {
+    apiKey: "AIzaSyC8yo4XBJCJ_1FaEVzPKOMlN_Kue0Ff5yQ",
+    authDomain: "weighted-wars.firebaseapp.com",
+    databaseURL: "https://weighted-wars-default-rtdb.firebaseio.com",
+    projectId: "weighted-wars",
+    storageBucket: "weighted-wars.appspot.com",   // ✅ corrected
+    messagingSenderId: "575150999392",
+    appId: "1:575150999392:web:6cdea188b68fbec7d10005",
+    measurementId: "G-RGTQRM0ND3"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getDatabase(app);
 
   // --- Globals ---
   let gameId = null;
@@ -145,8 +146,11 @@
   // --- Helpers ---
   const gameRef = () => ref(db, 'weighted-war/' + gameId);
   const stateRef = () => child(gameRef(), 'state');
-  const range11 = () => Array.from({length: 11}, (_, i) => i+1);
-  const log = (msg) => { const el = document.getElementById('log'); el.textContent += msg + "\\n"; };
+  const range11 = () => Array.from({ length: 11 }, (_, i) => i + 1);
+  const log = (msg) => {
+    const el = document.getElementById('log');
+    el.textContent += msg + "\n";
+  };
 
   // --- Initial state ---
   function initialState() {
@@ -334,7 +338,7 @@
     document.getElementById('tableCard').textContent = `Table card ${state.currentTableCard || '—'}`;
     document.getElementById('commitBidBtn').disabled = !state || state.phase !== 'await-bids' || selectedBid === null;
     document.getElementById('revealBtn').disabled = !state || state.phase !== 'await-reveal';
-    document.getElementById('nextTurnBtn').disabled = !state || state.phase !== 'resolution';
+    document.getElementById('nextTurnBtn').disabled = !state || state;
   }
 
   // --- Button bindings ---
