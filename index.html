@@ -256,27 +256,46 @@
 
     // 9) Phases and actions
     async function createGame(id, yourNameInput) {
-      gameId = id;
-      youId = 'u_' + Math.random().toString(36).slice(2);
-      role = 'p1';
-      youName = yourNameInput || 'Player 1';
+  gameId = id;
+  youId = 'u_' + Math.random().toString(36).slice(2);
+  role = 'p1';
+  youName = yourNameInput || 'Player 1';
 
-      const ref = gameRef();
-      const exists = (await ref.get()).val();
-      if (exists) { alert('Game ID already exists. Choose another.'); return; }
+  const ref = gameRef();
+  const exists = (await ref.get()).val();
+  if (exists) {
+    alert('Game ID already exists. Choose another.');
+    return;
+  }
 
-      const init = initialState();
-      init.p1.name = youName;
-      await ref.set({ state: init, players: { p1: youId } });
+  // Build initial state
+  const init = initialState();
+  init.p1.name = youName;
 
-      setHidden($('connectCard'), true);
-      setHidden($('linkCard'), false);
-      $('shareLink').value = `${location.origin}${location.pathname}?game=${encodeURIComponent(gameId)}`;
-      $('statusText').textContent = 'Game created. Waiting for opponent to join.';
-      setHidden($('statusCard'), false);
-      setHidden($('gameCard'), false);
-      render();
-    }
+  // Write initial state to Firebase
+  await ref.set({ state: init, players: { p1: youId } });
+
+  // ✅ Flip the first table card immediately so game starts
+  if (init.tableDeck.length > 0) {
+    const firstCard = init.tableDeck[0];
+    await stateRef().update({
+      currentTableCard: firstCard,
+      tableIndex: 1,
+      phase: 'await-bids'
+    });
+    log(`Game created. First table card is ${firstCard}. Place your bid!`);
+  }
+
+  // Show UI
+  setHidden($('connectCard'), true);
+  setHidden($('linkCard'), false);
+  $('shareLink').value = `${location.origin}${location.pathname}?game=${encodeURIComponent(gameId)}`;
+  $('statusText').textContent = 'Game created. Waiting for opponent to join.';
+  setHidden($('statusCard'), false);
+  setHidden($('gameCard'), false);
+  render();
+}
+
 
     async function joinGame(id, yourNameInput) {
       gameId = id;
@@ -323,7 +342,7 @@
         alert("Game state not loaded yet. Please wait until the game is ready.");
         return;
       }
-      
+
       if (state.phase !== 'await-bids') return;
       if (selectedBid === null) return;
 
