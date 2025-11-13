@@ -317,15 +317,23 @@
       log(`Table shows ${next}. Place your bid.`);
     }
 
+    // Commit bid with guard
     async function commitBid() {
+      if (!state) {
+        alert("Game state not loaded yet. Please wait until the game is ready.");
+        return;
+      }
       if (state.phase !== 'await-bids') return;
       if (selectedBid === null) return;
-      // Ensure bid is in your hand
+
       const hand = state[role].hand.slice();
       const idx = hand.indexOf(selectedBid);
-      if (idx === -1) { alert('That card is no longer in your hand.'); return; }
+      if (idx === -1) {
+        alert('That card is no longer in your hand.');
+        return;
+      }
 
-      // Write bid and remove from hand atomically
+      // Write bid and remove from hand
       const updates = {};
       updates[role + '/bid'] = selectedBid;
       hand.splice(idx, 1);
@@ -334,19 +342,22 @@
       await stateRef().update(updates);
 
       // If both bids present, move to await-reveal
-      const p1Bid = (role==='p1') ? selectedBid : state.p1.bid;
-      const p2Bid = (role==='p2') ? selectedBid : state.p2.bid;
-
       const fresh = (await stateRef().get()).val();
-      if (fresh.p1.bid !== null && fresh.p2.bid !== null && fresh.phase === 'await-bids') {
+      if (fresh && fresh.p1.bid !== null && fresh.p2.bid !== null && fresh.phase === 'await-bids') {
         await stateRef().update({ phase: 'await-reveal' });
       }
 
       render();
     }
 
+    // Reveal bids with guard
     async function revealBidsAndResolve() {
+      if (!state) {
+        alert("Game state not loaded yet.");
+        return;
+      }
       if (state.phase !== 'await-reveal') return;
+
       const p1b = state.p1.bid, p2b = state.p2.bid;
       const tableCard = state.currentTableCard;
 
@@ -371,7 +382,6 @@
       // Winner takes current table + war pile
       const winner = (p1b > p2b) ? 'p1' : 'p2';
       const wonCards = [tableCard, ...state.warPile];
-
       const winnerCards = state[winner].scoreCards.slice();
       wonCards.forEach(c => winnerCards.push(c));
 
@@ -383,6 +393,29 @@
 
       log(`${winner.toUpperCase()} wins ${wonCards.join(', ')}.`);
     }
+
+    // Next turn with guard
+    async function nextTurn() {
+      if (!state) {
+        alert("Game state not loaded yet.");
+        return;
+      }
+      if (state.phase !== 'resolution') return;
+
+      const updates = {
+        currentTableCard: null,
+        p1: { ...state.p1, bid: null },
+        p2: { ...state.p2, bid: null },
+        phase: 'await-flip'
+      };
+      await stateRef().update(updates);
+
+      // Auto-flip if cards remain
+      await flipTableCard();
+      selectedBid = null;
+      render();
+    }
+
 
     async function nextTurn() {
       if (state.phase !== 'resolution') return;
