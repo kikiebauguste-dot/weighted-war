@@ -4,6 +4,9 @@ import {
   collection, doc, setDoc, getDoc, onSnapshot, updateDoc, serverTimestamp
 } from "firebase/firestore";
 
+import { auth } from "./firebase";
+import { onAuthStateChanged } from "firebase/auth";
+
 type Seat = "A" | "B";
 type RoomState = {
   players: Record<string, { name: string; seat: Seat }>;
@@ -138,13 +141,16 @@ export default function App() {
     const url = new URL(window.location.href);
     return url.searchParams.get("room") || "";
   });
-  const [playerId, setPlayerId] = useState<string>(() => {
-    const existing = localStorage.getItem("playerId");
-    if (existing) return existing;
-    const id = crypto.randomUUID();
-    localStorage.setItem("playerId", id);
-    return id;
+const [playerId, setPlayerId] = useState<string | null>(null);
+
+useEffect(() => {
+  onAuthStateChanged(auth, (user) => {
+    if (user) {
+      setPlayerId(user.uid); // unique per browser session
+    }
   });
+}, []);
+
   const [name, setName] = useState<string>(() => localStorage.getItem("name") || "");
   const [error, setError] = useState<string>("");
 
