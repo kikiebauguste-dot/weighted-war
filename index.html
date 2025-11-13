@@ -313,9 +313,9 @@
   // Lock in p2 if slot free
   await ref.child('players/p2').transaction(val => val || youId);
 
-  // ✅ Update the full p2 object so state is consistent
+  // ✅ Use youName here
   const p2Update = {
-    name: yourName,
+    name: youName,
     hand: current.state?.p2?.hand || range11(),
     bid: null,
     scoreCards: current.state?.p2?.scoreCards || []
