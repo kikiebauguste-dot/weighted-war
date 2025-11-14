@@ -20,6 +20,16 @@ type RoomState = {
   phase: "waiting" | "playing" | "finished";
 };
 
+const [playerId, setPlayerId] = useState<string>(() => {
+  // Generate a new ID if none exists in this session
+  const existing = sessionStorage.getItem("playerId");
+  if (existing) return existing;
+  const id = crypto.randomUUID();
+  sessionStorage.setItem("playerId", id);
+  return id;
+});
+
+
 function shuffle<T>(arr: T[]): T[] {
   const a = arr.slice();
   for (let i = a.length - 1; i > 0; i--) {
@@ -57,26 +67,27 @@ async function createRoom(roomId: string, playerId: string, name: string) {
   });
 }
 
-async function joinRoom() {
-    const ref = doc(collection(db, "rooms"), roomId);
-    const snap = await getDoc(ref);
-    if (!snap.exists()) throw new Error("Room not found");
-    const data = snap.data() as any;
-    const state = data.state as RoomState;
+async function joinRoom(roomId: string, playerId: string, name: string) {
+  const ref = doc(collection(db, "rooms"), roomId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) throw new Error("Room not found");
+  const state = snap.data().state as RoomState;
 
-    if (state.players[name]) throw new Error("Name already taken");
+  if (state.players[playerId]) throw new Error("Already joined");
 
-    const takenSeats = new Set(Object.values(state.players).map(p => p.seat));
-    const seat: Seat = takenSeats.has("A") ? "B" : "A";
-    if (takenSeats.has("A") && takenSeats.has("B")) throw new Error("Room full");
+  const takenSeats = new Set(Object.values(state.players).map(p => p.seat));
+  if (takenSeats.has("A") && takenSeats.has("B")) throw new Error("Room full");
 
-    state.players[name] = { seat };
-    if (Object.values(state.players).length === 2 && state.phase === "waiting") {
-      state.phase = "playing";
-      state.currentCard = state.tableDeck[state.tableIndex] ?? null;
-    }
-    await updateDoc(ref, { state, updatedAt: serverTimestamp() });
+  const seat: Seat = takenSeats.has("A") ? "B" : "A";
+  state.players[playerId] = { name, seat };
+
+  if (Object.values(state.players).length === 2 && state.phase === "waiting") {
+    state.phase = "playing";
+    state.currentCard = state.tableDeck[state.tableIndex] ?? null;
   }
+  await updateDoc(ref, { state, updatedAt: serverTimestamp() });
+}
+
 
 
 async function placeBid(roomId: string, playerId: string, seat: Seat, value: number) {
@@ -138,40 +149,28 @@ function score(cards: number[]) {
 }
 
 export default function App() {
-  const [roomId, setRoomId] = useState<string>(() => {
+  const [roomId, setRoomId] = useState(() => {
     const url = new URL(window.location.href);
     return url.searchParams.get("room") || "";
   });
-const [playerId, setPlayerId] = useState<string | null>(null);
 
-// Snapshot: read-only on load, no writes
-useEffect(() => {
-  if (!roomId) return;
-  const ref = doc(collection(db, "rooms"), roomId);
-  return onSnapshot(ref, (snap) => {
-    if (snap.exists()) setState(snap.data().state as RoomState);
-  });
-}, [roomId]);
-
-  const [name, setName] = useState<string>(() => localStorage.getItem("name") || "");
-  const [error, setError] = useState<string>("");
-
+  const [name, setName] = useState(() => sessionStorage.getItem("name") || "");
+  const [error, setError] = useState("");
   const [state, setState] = useState<RoomState | null>(null);
   const [seat, setSeat] = useState<Seat | null>(null);
 
   useEffect(() => {
     if (!roomId) return;
     const ref = doc(collection(db, "rooms"), roomId);
-    const unsub = onSnapshot(ref, (snap) => {
-      const data = snap.data() as any;
-      if (!data) return;
-      const s = data.state as RoomState;
+    return onSnapshot(ref, (snap) => {
+      if (!snap.exists()) return;
+      const s = snap.data().state as RoomState;
       setState(s);
-      const me = s.players[playerId];
+      const me = s.players[name];
       setSeat(me?.seat ?? null);
     });
-    return () => unsub();
-  }, [roomId, playerId]);
+  }, [roomId, name]);
+
 
   function onCreate() {
     const id = Math.random().toString(36).slice(2, 8);
