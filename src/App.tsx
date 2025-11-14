@@ -57,26 +57,27 @@ async function createRoom(roomId: string, playerId: string, name: string) {
   });
 }
 
-async function joinRoom(roomId: string, playerId: string, name: string) {
-  const ref = doc(collection(db, "rooms"), roomId);
-  const snap = await getDoc(ref);
-  if (!snap.exists()) throw new Error("Room not found");
-  const data = snap.data() as any;
-  const state = data.state as RoomState;
+async function joinRoom() {
+    const ref = doc(collection(db, "rooms"), roomId);
+    const snap = await getDoc(ref);
+    if (!snap.exists()) throw new Error("Room not found");
+    const data = snap.data() as any;
+    const state = data.state as RoomState;
 
-  // Assign seat
-  const takenSeats = new Set(Object.values(state.players).map(p => p.seat));
-  const seat: Seat = takenSeats.has("A") ? "B" : "A";
-  if (takenSeats.has("A") && takenSeats.has("B")) throw new Error("Room full");
+    if (state.players[name]) throw new Error("Name already taken");
 
-  state.players[playerId] = { name, seat };
-  // Start game if both present
-  if (Object.values(state.players).length === 2 && state.phase === "waiting") {
-    state.phase = "playing";
-    state.currentCard = state.tableDeck[state.tableIndex] ?? null;
+    const takenSeats = new Set(Object.values(state.players).map(p => p.seat));
+    const seat: Seat = takenSeats.has("A") ? "B" : "A";
+    if (takenSeats.has("A") && takenSeats.has("B")) throw new Error("Room full");
+
+    state.players[name] = { seat };
+    if (Object.values(state.players).length === 2 && state.phase === "waiting") {
+      state.phase = "playing";
+      state.currentCard = state.tableDeck[state.tableIndex] ?? null;
+    }
+    await updateDoc(ref, { state, updatedAt: serverTimestamp() });
   }
-  await updateDoc(ref, { state, updatedAt: serverTimestamp() });
-}
+
 
 async function placeBid(roomId: string, playerId: string, seat: Seat, value: number) {
   const ref = doc(collection(db, "rooms"), roomId);
