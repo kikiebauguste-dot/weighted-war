@@ -20,16 +20,6 @@ type RoomState = {
   phase: "waiting" | "playing" | "finished";
 };
 
-const [playerId, setPlayerId] = useState<string>(() => {
-  // Generate a new ID if none exists in this session
-  const existing = sessionStorage.getItem("playerId");
-  if (existing) return existing;
-  const id = crypto.randomUUID();
-  sessionStorage.setItem("playerId", id);
-  return id;
-});
-
-
 function shuffle<T>(arr: T[]): T[] {
   const a = arr.slice();
   for (let i = a.length - 1; i > 0; i--) {
@@ -149,6 +139,17 @@ function score(cards: number[]) {
 }
 
 export default function App() {
+
+  const [playerId, setPlayerId] = useState<string>(() => {
+  // Generate a new ID if none exists in this session
+  const existing = sessionStorage.getItem("playerId");
+  if (existing) return existing;
+  const id = crypto.randomUUID();
+  sessionStorage.setItem("playerId", id);
+  return id;
+});
+
+
   const [roomId, setRoomId] = useState(() => {
     const url = new URL(window.location.href);
     return url.searchParams.get("room") || "";
