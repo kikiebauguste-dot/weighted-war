@@ -160,17 +160,19 @@ export default function App() {
   const [state, setState] = useState<RoomState | null>(null);
   const [seat, setSeat] = useState<Seat | null>(null);
 
-  useEffect(() => {
-    if (!roomId) return;
-    const ref = doc(collection(db, "rooms"), roomId);
-    return onSnapshot(ref, (snap) => {
-      if (!snap.exists()) return;
-      const s = snap.data().state as RoomState;
-      setState(s);
-      const me = s.players[name];
-      setSeat(me?.seat ?? null);
-    });
-  }, [roomId, name]);
+useEffect(() => {
+  if (!roomId) return;
+  const ref = doc(collection(db, "rooms"), roomId);
+  return onSnapshot(ref, (snap) => {
+    if (!snap.exists()) return;
+    const s = snap.data().state as RoomState;
+    setState(s);
+    // ❌ Don’t auto‑set seat here
+    // const me = s.players[playerId];
+    // setSeat(me?.seat ?? null);
+  });
+}, [roomId]);
+
 
 
   function onCreate() {
