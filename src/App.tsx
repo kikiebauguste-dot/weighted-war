@@ -144,14 +144,14 @@ export default function App() {
   });
 const [playerId, setPlayerId] = useState<string | null>(null);
 
+// Snapshot: read-only on load, no writes
 useEffect(() => {
-  onAuthStateChanged(auth, (user) => {
-    if (user) {
-      setPlayerId(user.uid); // unique per browser session
-    }
+  if (!roomId) return;
+  const ref = doc(collection(db, "rooms"), roomId);
+  return onSnapshot(ref, (snap) => {
+    if (snap.exists()) setState(snap.data().state as RoomState);
   });
-  return () => unsub();
-}, []);
+}, [roomId]);
 
   const [name, setName] = useState<string>(() => localStorage.getItem("name") || "");
   const [error, setError] = useState<string>("");
